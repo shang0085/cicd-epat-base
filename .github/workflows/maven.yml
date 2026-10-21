@@ -58,6 +58,29 @@ jobs:
           echo "has-issues=false" >> $GITHUB_OUTPUT
         fi
 
+  docker-push:
+    needs: docker-build
+    runs-on: ubuntu-latest
+    if: github.ref == 'refs/heads/main'
+
+    steps:
+    - uses: actions/checkout@v4
+
+    - name: Log in to Docker Hub
+      uses: docker/login-action@v3
+      with:
+        username: ${{ secrets.DOCKERHUB_USERNAME }}
+        password: ${{ secrets.DOCKERHUB_TOKEN }}
+
+    - name: Build and push Docker image
+      uses: docker/build-push-action@v6
+      with:
+        context: .
+        push: true
+        tags: |
+          ${{ secrets.DOCKERHUB_USERNAME }}/d13revision:${{ github.sha }}
+          ${{ secrets.DOCKERHUB_USERNAME }}/d13revision:latest
+
   security-scan:
     needs: build-test
     runs-on: ubuntu-latest
@@ -98,7 +121,7 @@ jobs:
         fi
 
   notify:
-    needs: [build-test, docker-build, security-scan]
+    needs: [build-test, docker-build, docker-push, security-scan]
     runs-on: ubuntu-latest
     if: always()
 
@@ -109,7 +132,7 @@ jobs:
         to: ${{ secrets.TELEGRAM_TO }}
         token: ${{ secrets.TELEGRAM_TOKEN }}
         message: |
-          ${{ (needs.build-test.result != 'success' || needs.docker-build.result != 'success' || needs.security-scan.result != 'success') && '❌ Pipeline FAILED' || (needs.docker-build.outputs.trivy-has-issues == 'true' || needs.security-scan.outputs.snyk-has-issues == 'true') && '⚠️ Pipeline PASSED (with security findings)' || '✅ Pipeline PASSED' }}
+          ${{ (needs.build-test.result != 'success' || needs.docker-build.result != 'success' || needs.docker-push.result == 'failure' || needs.security-scan.result != 'success') && '❌ Pipeline FAILED' || (needs.docker-build.outputs.trivy-has-issues == 'true' || needs.security-scan.outputs.snyk-has-issues == 'true') && '⚠️ Pipeline PASSED (with security findings)' || '✅ Pipeline PASSED' }}
 
           Repo: ${{ github.repository }}
           Branch: ${{ github.ref_name }}
@@ -118,6 +141,7 @@ jobs:
 
           build-test: ${{ needs.build-test.result }}
           docker-build: ${{ needs.docker-build.result }}
+          docker-push: ${{ needs.docker-push.result }}
           security-scan: ${{ needs.security-scan.result }}
 
           📦 Trivy scan:
