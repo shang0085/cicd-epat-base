@@ -44,3 +44,27 @@ jobs:
       run: snyk test --severity-threshold=high
       env:
         SNYK_TOKEN: ${{ secrets.SNYK_TOKEN }}
+
+  notify:
+    needs: [build-test, security-scan]
+    runs-on: ubuntu-latest
+    if: always()
+
+    steps:
+    - name: Send Telegram notification
+      uses: appleboy/telegram-action@master
+      with:
+        to: ${{ secrets.TELEGRAM_TO }}
+        token: ${{ secrets.TELEGRAM_TOKEN }}
+        message: |
+          ${{ (needs.build-test.result == 'success' && needs.security-scan.result == 'success') && '✅ Pipeline PASSED' || '❌ Pipeline FAILED' }}
+
+          Repo: ${{ github.repository }}
+          Branch: ${{ github.ref_name }}
+          Commit: ${{ github.event.head_commit.message }}
+          Triggered by: ${{ github.actor }}
+
+          build-test: ${{ needs.build-test.result }}
+          security-scan: ${{ needs.security-scan.result }}
+
+          Details: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
