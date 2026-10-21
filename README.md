@@ -1,5 +1,11 @@
 # Reference
 
+``` powershell
+$env:JAVA_HOME = "C:\Program Files\Java\jdk-21.0.12.1"
+$env:PATH = "$env:JAVA_HOME\bin;" + $env:PATH
+java -version
+```
+
 ## Maven Command
 
 1. mvnw
