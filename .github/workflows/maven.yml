@@ -23,6 +23,24 @@ jobs:
     - name: Test with Maven
       run: mvn -B test
 
+  docker-build:
+    needs: build-test
+    runs-on: ubuntu-latest
+
+    steps:
+    - uses: actions/checkout@v4
+
+    - name: Build Docker image
+      run: docker build -t d13revision:${{ github.sha }} .
+
+    - name: Run Trivy container scan
+      uses: aquasecurity/trivy-action@master
+      with:
+        image-ref: d13revision:${{ github.sha }}
+        format: table
+        severity: HIGH,CRITICAL
+        exit-code: 0
+
   security-scan:
     needs: build-test
     runs-on: ubuntu-latest
@@ -46,7 +64,7 @@ jobs:
         SNYK_TOKEN: ${{ secrets.SNYK_TOKEN }}
 
   notify:
-    needs: [build-test, security-scan]
+    needs: [build-test, docker-build, security-scan]
     runs-on: ubuntu-latest
     if: always()
 
@@ -57,7 +75,7 @@ jobs:
         to: ${{ secrets.TELEGRAM_TO }}
         token: ${{ secrets.TELEGRAM_TOKEN }}
         message: |
-          ${{ (needs.build-test.result == 'success' && needs.security-scan.result == 'success') && '✅ Pipeline PASSED' || '❌ Pipeline FAILED' }}
+          ${{ (needs.build-test.result == 'success' && needs.docker-build.result == 'success' && needs.security-scan.result == 'success') && '✅ Pipeline PASSED' || '❌ Pipeline FAILED' }}
 
           Repo: ${{ github.repository }}
           Branch: ${{ github.ref_name }}
@@ -65,6 +83,7 @@ jobs:
           Triggered by: ${{ github.actor }}
 
           build-test: ${{ needs.build-test.result }}
+          docker-build: ${{ needs.docker-build.result }}
           security-scan: ${{ needs.security-scan.result }}
 
           Details: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
