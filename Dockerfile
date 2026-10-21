@@ -1,5 +1,5 @@
-# first stage
-FROM openjdk:23-ea-oracle AS builder
+# first stage: Build the application
+FROM eclipse-temurin:21-jdk AS builder
 
 WORKDIR /app
 
@@ -10,8 +10,8 @@ COPY src src
 COPY pom.xml .
 RUN ./mvnw package -DskipTests=true
 
-# second stage
-FROM openjdk:23-ea-oracle
+# second stage: Run the application using a smaller JRE image
+FROM eclipse-temurin:21-jre
 
 WORKDIR /runningapp
 
