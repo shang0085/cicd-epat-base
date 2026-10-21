@@ -26,6 +26,8 @@ jobs:
   docker-build:
     needs: build-test
     runs-on: ubuntu-latest
+    outputs:
+      trivy-summary: ${{ steps.trivy-summary.outputs.summary }}
 
     steps:
     - uses: actions/checkout@v4
@@ -40,10 +42,21 @@ jobs:
         format: table
         severity: HIGH,CRITICAL
         exit-code: 0
+        output: trivy-results.txt
+
+    - name: Extract Trivy summary
+      id: trivy-summary
+      run: |
+        SUMMARY=$(tail -8 trivy-results.txt 2>/dev/null || echo "No results")
+        echo "summary<<EOF" >> $GITHUB_OUTPUT
+        echo "$SUMMARY" >> $GITHUB_OUTPUT
+        echo "EOF" >> $GITHUB_OUTPUT
 
   security-scan:
     needs: build-test
     runs-on: ubuntu-latest
+    outputs:
+      snyk-summary: ${{ steps.snyk-summary.outputs.summary }}
 
     steps:
     - uses: actions/checkout@v4
@@ -59,9 +72,17 @@ jobs:
       uses: snyk/actions/setup@master
 
     - name: Run Snyk Test
-      run: snyk test --severity-threshold=high
+      run: snyk test --severity-threshold=high 2>&1 | tee snyk-results.txt || true
       env:
         SNYK_TOKEN: ${{ secrets.SNYK_TOKEN }}
+
+    - name: Extract Snyk summary
+      id: snyk-summary
+      run: |
+        SUMMARY=$(grep -E "found [0-9]+ issues|Tested [0-9]+" snyk-results.txt | tail -3 || echo "No summary")
+        echo "summary<<EOF" >> $GITHUB_OUTPUT
+        echo "$SUMMARY" >> $GITHUB_OUTPUT
+        echo "EOF" >> $GITHUB_OUTPUT
 
   notify:
     needs: [build-test, docker-build, security-scan]
@@ -85,5 +106,11 @@ jobs:
           build-test: ${{ needs.build-test.result }}
           docker-build: ${{ needs.docker-build.result }}
           security-scan: ${{ needs.security-scan.result }}
+
+          📦 Trivy scan:
+          ${{ needs.docker-build.outputs.trivy-summary }}
+
+          🔍 Snyk scan:
+          ${{ needs.security-scan.outputs.snyk-summary }}
 
           Details: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
