@@ -28,6 +28,7 @@ jobs:
     runs-on: ubuntu-latest
     outputs:
       trivy-summary: ${{ steps.trivy-summary.outputs.summary }}
+      trivy-has-issues: ${{ steps.trivy-summary.outputs.has-issues }}
 
     steps:
     - uses: actions/checkout@v4
@@ -51,12 +52,18 @@ jobs:
         echo "summary<<EOF" >> $GITHUB_OUTPUT
         echo "$SUMMARY" >> $GITHUB_OUTPUT
         echo "EOF" >> $GITHUB_OUTPUT
+        if grep -qE "HIGH|CRITICAL" trivy-results.txt 2>/dev/null; then
+          echo "has-issues=true" >> $GITHUB_OUTPUT
+        else
+          echo "has-issues=false" >> $GITHUB_OUTPUT
+        fi
 
   security-scan:
     needs: build-test
     runs-on: ubuntu-latest
     outputs:
       snyk-summary: ${{ steps.snyk-summary.outputs.summary }}
+      snyk-has-issues: ${{ steps.snyk-summary.outputs.has-issues }}
 
     steps:
     - uses: actions/checkout@v4
@@ -72,17 +79,23 @@ jobs:
       uses: snyk/actions/setup@master
 
     - name: Run Snyk Test
-      run: snyk test --severity-threshold=high 2>&1 | tee snyk-results.txt || true
+      run: snyk test --severity-threshold=high 2>&1 | tee snyk-results.txt
       env:
         SNYK_TOKEN: ${{ secrets.SNYK_TOKEN }}
 
     - name: Extract Snyk summary
+      if: always()
       id: snyk-summary
       run: |
         SUMMARY=$(grep -E "found [0-9]+ issues|Tested [0-9]+" snyk-results.txt | tail -3 || echo "No summary")
         echo "summary<<EOF" >> $GITHUB_OUTPUT
         echo "$SUMMARY" >> $GITHUB_OUTPUT
         echo "EOF" >> $GITHUB_OUTPUT
+        if grep -qE "found [1-9][0-9]* issues" snyk-results.txt 2>/dev/null; then
+          echo "has-issues=true" >> $GITHUB_OUTPUT
+        else
+          echo "has-issues=false" >> $GITHUB_OUTPUT
+        fi
 
   notify:
     needs: [build-test, docker-build, security-scan]
@@ -96,7 +109,7 @@ jobs:
         to: ${{ secrets.TELEGRAM_TO }}
         token: ${{ secrets.TELEGRAM_TOKEN }}
         message: |
-          ${{ (needs.build-test.result == 'success' && needs.docker-build.result == 'success' && needs.security-scan.result == 'success') && '✅ Pipeline PASSED' || '❌ Pipeline FAILED' }}
+          ${{ (needs.build-test.result != 'success' || needs.docker-build.result != 'success' || needs.security-scan.result != 'success') && '❌ Pipeline FAILED' || (needs.docker-build.outputs.trivy-has-issues == 'true' || needs.security-scan.outputs.snyk-has-issues == 'true') && '⚠️ Pipeline PASSED (with security findings)' || '✅ Pipeline PASSED' }}
 
           Repo: ${{ github.repository }}
           Branch: ${{ github.ref_name }}
